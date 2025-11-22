@@ -1,4 +1,7 @@
 import logging
+import json
+import os
+from datetime import datetime
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -12,8 +15,8 @@ from livekit.agents import (
     cli,
     metrics,
     tokenize,
-    # function_tool,
-    # RunContext
+    function_tool,
+    RunContext
 )
 from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
@@ -23,31 +26,108 @@ logger = logging.getLogger("agent")
 load_dotenv(".env.local")
 
 
-class Assistant(Agent):
+# --- DAY 2: INITIAL ORDER STATE ---
+INITIAL_ORDER_STATE = {
+    "drinkType": None,
+    "size": None,
+    "milk": None,
+    "extras": [],
+    "name": None
+}
+# ----------------------------------
+
+
+class BaristaAgent(Agent):
     def __init__(self) -> None:
-        super().__init__(
-            instructions="""You are a helpful voice AI assistant. The user is interacting with you via voice, even if you perceive the conversation as text.
-            You eagerly assist users with their questions by providing information from your extensive knowledge.
-            Your responses are concise, to the point, and without any complex formatting or punctuation including emojis, asterisks, or other symbols.
-            You are curious, friendly, and have a sense of humor.""",
+        # Define the Barista persona and task instructions for the LLM
+        barista_instructions = (
+            "You are a friendly and efficient coffee shop barista at 'The Falcon Brew'. "
+            "Your primary goal is to take a customer's order by asking one clarifying question at a time "
+            "until the entire order state is filled. "
+            "The required fields are: drinkType, size, milk, and name. Extras are optional. "
+            "Use the 'update_coffee_order' tool whenever the user provides a relevant piece of information. "
+            "Always ask the user for the next missing required field in the order state."
         )
 
-    # To add tools, use the @function_tool decorator.
-    # Here's an example that adds a simple weather tool.
-    # You also have to add `from livekit.agents import function_tool, RunContext` to the top of this file
-    # @function_tool
-    # async def lookup_weather(self, context: RunContext, location: str):
-    #     """Use this tool to look up current weather information in the given location.
-    #
-    #     If the location is not supported by the weather service, the tool will indicate this. You must tell the user the location's weather is unavailable.
-    #
-    #     Args:
-    #         location: The location to look up weather information for (e.g. city name)
-    #     """
-    #
-    #     logger.info(f"Looking up weather for {location}")
-    #
-    #     return "sunny with a temperature of 70 degrees."
+        super().__init__(instructions=barista_instructions)
+        
+        # Initialize the order state
+        self.order_state = INITIAL_ORDER_STATE.copy()
+        
+        # Make the order tool available to the LLM
+        self.update_tools([self.update_order_tool])
+
+    @function_tool(
+        name="update_coffee_order",
+        description="Call this function to update any missing field in the current coffee order. Use it only when the user explicitly provides a value for a field. Never guess. The 'extras' field can be updated multiple times.",
+    )
+    async def update_order_tool(
+        self,
+        context: RunContext,
+        drinkType: str = None,
+        size: str = None,
+        milk: str = None,
+        extras: list[str] = None,
+        name: str = None,
+    ):
+        """Used to update the customer's coffee order state. Call this once for every piece of information the user provides."""
+        
+        # 1. Update the local state with any non-None arguments
+        if drinkType is not None:
+            self.order_state["drinkType"] = drinkType
+        if size is not None:
+            self.order_state["size"] = size
+        if milk is not None:
+            self.order_state["milk"] = milk
+        if name is not None:
+            self.order_state["name"] = name
+        
+        # Handle 'extras' as a list that can accumulate items
+        if extras is not None and isinstance(extras, list):
+            self.order_state["extras"].extend(extras)
+
+        # 2. Check if all REQUIRED fields are filled (excluding 'extras')
+        required_fields = ["drinkType", "size", "milk", "name"]
+        missing_fields = [k for k in required_fields if self.order_state[k] is None]
+
+        if not missing_fields:
+            # All required fields are filled, complete the order
+            await self._save_order_and_summarize(context)
+            
+            # This message is sent to the LLM to confirm completion and stop questioning
+            return "Order is complete and saved. Thank the customer and confirm their order."
+        else:
+            # Tell the LLM what is still missing so it can ask the next question
+            return f"Order state updated. The following is still missing: {', '.join(missing_fields)}. Ask the user for the next piece of missing required information."
+
+    async def _save_order_and_summarize(self, context: RunContext):
+        """Saves the final order state to a JSON file and sends a summary to the user."""
+        
+        # Create a directory to store orders if it doesn't exist
+        ORDERS_DIR = "orders"
+        if not os.path.exists(ORDERS_DIR):
+            os.makedirs(ORDERS_DIR)
+            
+        # Format the filename
+        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        order_name = self.order_state.get("name", "anon_order").replace(" ", "_")
+        filename = os.path.join(ORDERS_DIR, f"order_{order_name}_{current_time}.json")
+        
+        # Write the JSON file
+        with open(filename, 'w') as f:
+            json.dump(self.order_state, f, indent=4)
+            
+        # Print confirmation to the terminal (for video recording proof)
+        print("=" * 50)
+        print(f"🎉 DAY 2 PRIMARY GOAL COMPLETE! Order Saved to: {filename}")
+        print(json.dumps(self.order_state, indent=4))
+        print("=" * 50)
+        
+        # Optional: Send a final summary to the user via TTS
+        # This gives the agent a final response to say out loud before hanging up
+        extras_list = f" and {' and '.join(self.order_state['extras'])}" if self.order_state['extras'] else ''
+        summary = f"Got it, {self.order_state['name']}! Your order has been placed. That's one {self.order_state['size']} {self.order_state['drinkType']} with {self.order_state['milk']}{extras_list}. We'll have that ready shortly."
+        await context.session.say(summary)
 
 
 def prewarm(proc: JobProcess):
@@ -61,18 +141,15 @@ async def entrypoint(ctx: JobContext):
         "room": ctx.room.name,
     }
 
-    # Set up a voice AI pipeline using OpenAI, Cartesia, AssemblyAI, and the LiveKit turn detector
+    # Set up a voice AI pipeline using Murf, Deepgram, and the LiveKit turn detector
     session = AgentSession(
         # Speech-to-text (STT) is your agent's ears, turning the user's speech into text that the LLM can understand
-        # See all available models at https://docs.livekit.io/agents/models/stt/
         stt=deepgram.STT(model="nova-3"),
         # A Large Language Model (LLM) is your agent's brain, processing user input and generating a response
-        # See all available models at https://docs.livekit.io/agents/models/llm/
         llm=google.LLM(
                 model="gemini-2.5-flash",
             ),
         # Text-to-speech (TTS) is your agent's voice, turning the LLM's text into speech that the user can hear
-        # See all available models as well as voice selections at https://docs.livekit.io/agents/models/tts/
         tts=murf.TTS(
                 voice="en-US-matthew", 
                 style="Conversation",
@@ -80,26 +157,13 @@ async def entrypoint(ctx: JobContext):
                 text_pacing=True
             ),
         # VAD and turn detection are used to determine when the user is speaking and when the agent should respond
-        # See more at https://docs.livekit.io/agents/build/turns
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
         # allow the LLM to generate a response while waiting for the end of turn
-        # See more at https://docs.livekit.io/agents/build/audio/#preemptive-generation
         preemptive_generation=True,
     )
 
-    # To use a realtime model instead of a voice pipeline, use the following session setup instead.
-    # (Note: This is for the OpenAI Realtime API. For other providers, see https://docs.livekit.io/agents/models/realtime/))
-    # 1. Install livekit-agents[openai]
-    # 2. Set OPENAI_API_KEY in .env.local
-    # 3. Add `from livekit.plugins import openai` to the top of this file
-    # 4. Use the following session setup instead of the version above
-    # session = AgentSession(
-    #     llm=openai.realtime.RealtimeModel(voice="marin")
-    # )
-
     # Metrics collection, to measure pipeline performance
-    # For more information, see https://docs.livekit.io/agents/build/metrics/
     usage_collector = metrics.UsageCollector()
 
     @session.on("metrics_collected")
@@ -113,17 +177,9 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
-    # # Add a virtual avatar to the session, if desired
-    # # For other providers, see https://docs.livekit.io/agents/models/avatar/
-    # avatar = hedra.AvatarSession(
-    #   avatar_id="...",  # See https://docs.livekit.io/agents/models/avatar/plugins/hedra
-    # )
-    # # Start the avatar and wait for it to join
-    # await avatar.start(session, room=ctx.room)
-
     # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=Assistant(),
+        agent=BaristaAgent(), # <--- Using the new BaristaAgent
         room=ctx.room,
         room_input_options=RoomInputOptions(
             # For telephony applications, use `BVCTelephony` for best results
