@@ -1,0 +1,9 @@
+{
+    "drinkType": "cappuccino",
+    "size": "Large",
+    "milk": "Oat milk",
+    "extras": [
+        "Caramel drizzle"
+    ],
+    "name": "Rohit"
+}

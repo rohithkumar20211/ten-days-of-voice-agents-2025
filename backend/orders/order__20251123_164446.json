@@ -1,0 +1,11 @@
+{
+    "drinkType": "latte",
+    "size": "large",
+    "milk": "oat milk",
+    "extras": [
+        "caramel drizzle",
+        "caramel drizzle",
+        "caramel drizzle"
+    ],
+    "name": ""
+}
