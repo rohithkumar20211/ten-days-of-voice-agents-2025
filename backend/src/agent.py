@@ -1,9 +1,8 @@
 import logging
 import json
 import os
-from datetime import datetime
-from typing import Optional, List
-import re 
+from datetime import datetime, timedelta
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from livekit.agents import (
@@ -27,155 +26,127 @@ logger = logging.getLogger("agent")
 
 load_dotenv(".env.local")
 
-
-# --- INITIAL ORDER STATE ---
-INITIAL_ORDER_STATE = {
-    "drinkType": None,
-    "size": None,
-    "milk": None,
-    # 'extras' is required to be filled (list must be non-empty) before completion
-    "extras": [], 
-    "name": None
-}
-# ---------------------------
+# --- DAY 3: FILE PATH & DATE MOCKING STATE ---
+WELLNESS_LOG_FILE = "wellness_log.json"
+# Global state to hold the mock date for the current session.
+# We will manually advance this between calls to simulate consecutive days.
+MOCK_DATE = datetime.now().date() + timedelta(days = 1)# Simulate Day 3
+# ----------------------------------------------
 
 
-class BaristaAgent(Agent):
+def load_wellness_history() -> List[dict]:
+    """Loads the past check-ins from the JSON file."""
+    if os.path.exists(WELLNESS_LOG_FILE):
+        with open(WELLNESS_LOG_FILE, 'r') as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                print(f"WARNING: {WELLNESS_LOG_FILE} is corrupted or empty. Starting fresh.")
+                return []
+    return []
+
+
+def save_new_entry(new_entry: dict):
+    """Appends a new entry to the wellness log file."""
+    history = load_wellness_history()
+    
+    # CRITICAL: Add the current MOCK_DATE to the entry before saving
+    new_entry["date"] = MOCK_DATE.strftime("%Y-%m-%d") 
+    
+    history.append(new_entry)
+    with open(WELLNESS_LOG_FILE, 'w') as f:
+        json.dump(history, f, indent=4)
+
+
+class WellnessAgent(Agent):
     def __init__(self) -> None:
-        barista_instructions = (
-            "You are a friendly and efficient coffee shop barista at 'The Falcon Brew'. "
-            "Your primary goal is to take a customer's order by asking one clarifying question at a time "
-            "until the entire order state is filled. "
-            # UPDATED: 'extras' is now listed as a required field for the LLM to prompt for it.
-            "The required fields are: drinkType, size, milk, name, and at least one item in extras. "
-            "Use the 'update_coffee_order' tool whenever the user provides a relevant piece of information. "
-            "Always ask the user for the next missing required field in the order state. If all other fields are filled, ask the customer what extras they would like (e.g., 'extra shot,' 'vanilla syrup,' etc.)."
+        # Load historical data at agent startup
+        self.history = load_wellness_history()
+        self.last_checkin_summary = self._get_last_summary()
+        
+        # 1. Define the system prompt with persona and rules
+        base_instructions = (
+            "You are a supportive, realistic, and grounded Health & Wellness Voice Companion. "
+            "Your goal is to conduct a short daily check-in with the user, focusing on mood and goals. "
+            "NEVER offer diagnosis or medical advice. Keep advice small, actionable, and non-medical. "
+            "Your conversation flow must be: "
+            "1. Acknowledge user's history (if provided in context). "
+            "2. Ask about current mood and energy. "
+            "3. Ask about 1-3 simple, practical objectives for the day. "
+            "4. Offer one simple, grounded piece of advice. "
+            "5. Call the 'complete_checkin' tool to summarize and save the log."
         )
+        
+        # 4. Use past data to inform the conversation
+        if self.last_checkin_summary:
+            base_instructions += f"\n\nContext on Past Check-in: The user's last session was on {self.history[-1]['date']}. They reported: {self.last_checkin_summary}. Use this to ask how their current state compares or if they followed through on a previous goal."
+        
+        super().__init__(instructions=base_instructions)
+        
+        # Add the tool to the agent's available tools
+        self.update_tools([self.complete_checkin])
 
-        # State flag to prevent race conditions and early completion
-        self._is_order_complete = False 
-        
-        super().__init__(instructions=barista_instructions)
-        
-        self.order_state = INITIAL_ORDER_STATE.copy()
-        
-        self.update_tools([self.update_order_tool])
+    def _get_last_summary(self) -> Optional[str]:
+        """Returns a summary of the most recent check-in, if available."""
+        if self.history:
+            entry = self.history[-1]
+            return f"{entry['mood_summary']}. The objectives were: {', '.join(entry['objectives'])}."
+        return None
 
     @function_tool(
-        name="update_coffee_order",
-        description="Call this function to update any missing field in the current coffee order. Use it only when the user explicitly provides a value for a field. Never guess. The 'extras' field can be updated multiple times.",
+        name="complete_checkin",
+        description="Call this function ONLY after the user has confirmed their mood/energy and stated their 1-3 objectives for the day. This function saves the log and closes the session.",
     )
-    async def update_order_tool(
+    async def complete_checkin(
         self,
         context: RunContext,
-        # FIX: Using Optional to allow LLM to pass None/null without validation error
-        drinkType: Optional[str] = None, 
-        size: Optional[str] = None,
-        milk: Optional[str] = None,
-        extras: Optional[List[str]] = None, 
-        name: Optional[str] = None,
+        mood_summary: str,
+        objectives: List[str],
+        advice_given: str
     ):
-        """Used to update the customer's coffee order state. Call this once for every piece of information the user provides."""
-
-        if self._is_order_complete:
-            return "Order is already complete and saved. Thank the customer and confirm their order."
-        
-        # Helper function to treat None and empty string as invalid/missing input
-        def is_valid_input(value):
-            return value is not None and value != ""
-
-        # Update the local state only with valid (non-None and non-empty string) arguments
-        if is_valid_input(drinkType):
-            self.order_state["drinkType"] = drinkType
-        if is_valid_input(size):
-            self.order_state["size"] = size
-        if is_valid_input(milk):
-            self.order_state["milk"] = milk
-        if is_valid_input(name):
-            self.order_state["name"] = name
-        
-        # Handle 'extras' (accumulating items and avoiding duplicates)
-        if extras is not None and isinstance(extras, list):
-            for item in extras:
-                if item not in self.order_state["extras"]:
-                    self.order_state["extras"].append(item)
-
-
-        # REQUIRED FIELDS CHECK
-        required_fields = ["drinkType", "size", "milk", "name"]
-        
-        # Identify missing fields for the simple string/None required fields (FIX: Check for empty string)
-        missing_fields = [k for k in required_fields if self.order_state[k] is None or self.order_state[k] == ""]
-
-        # NEW/FIX: Check the 'extras' requirement (list must have at least one item)
-        if not self.order_state["extras"]:
-            # If the list is empty, treat 'extras' as missing
-            missing_fields.append("extras (e.g., extra shot, syrup)")
-
-        if not missing_fields:
-            # All required fields are filled, including at least one extra
-            self._is_order_complete = True
+        """Saves the final check-in details and gives the final recap."""
             
-            await self._save_order_and_summarize(context)
+        if not mood_summary or not objectives:
+            return "ERROR: Missing required fields. Ask the user for their mood and 1-3 objectives before calling this tool."
             
-            return "Order is complete and saved. Thank the customer and confirm their order."
-        else:
-            # Tell the LLM what is still missing so it can ask the next question
-            return f"Order state updated. The following is still missing: {', '.join(missing_fields)}. Ask the user for the next piece of missing required information."
-
-    async def _save_order_and_summarize(self, context: RunContext):
-        """Saves the final order state to a JSON file and sends a summary to the user."""
+        # 1. Create the new log entry
+        new_entry = {
+            "mood_summary": mood_summary,
+            "objectives": objectives,
+            "agent_reflection": advice_given,
+        }
         
-        ORDERS_DIR = "orders"
-        if not os.path.exists(ORDERS_DIR):
-            try:
-                os.makedirs(ORDERS_DIR)
-            except OSError as e:
-                logger.error(f"Failed to create orders directory {ORDERS_DIR}: {e}")
-                return
-
-        # Robust filename generation
-        current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # 2. Persist the data (Uses the MOCK_DATE)
+        save_new_entry(new_entry)
         
-        raw_name = self.order_state.get("name", "anon_order")
-        # Sanitize the name: replace non-alphanumeric characters (except - and _)
-        sanitized_name = raw_name.replace(" ", "_").lower()
-        order_name = re.sub(r'[^\w\-]', '', sanitized_name) 
-
-        filename = os.path.join(ORDERS_DIR, f"order_{order_name}_{current_time}.json")
+        # 3. Close the check-in with a brief recap
+        print("=" * 50)
+        print(f"✅ DAY 3 CHECK-IN COMPLETE! Saved to: {WELLNESS_LOG_FILE} with date {MOCK_DATE}")
+        print(json.dumps(new_entry, indent=4))
+        print("=" * 50)
         
-        # FIX: Added Try/Except Block for File Writing
-        try:
-            # Write the JSON file
-            with open(filename, 'w') as f:
-                json.dump(self.order_state, f, indent=4)
-                
-            # Print confirmation to the terminal 
-            print("=" * 50)
-            print(f"🎉 DAY 2 PRIMARY GOAL COMPLETE! Order Saved to: {filename}")
-            print(json.dumps(self.order_state, indent=4))
-            print("=" * 50)
+        objectives_list = ", ".join(objectives)
+        final_recap = (
+            f"Perfect! So, today's summary is: {mood_summary}. Your goals are: {objectives_list}. "
+            "I've saved this entry. Does this sound right? I look forward to our chat tomorrow."
+        )
+        await context.session.say(final_recap)
+        
+        return "Log saved and recap delivered. The session is complete."
 
-        except Exception as e:
-            logger.error(f"Failed to save order to file {filename}: {e}")
-            
-            
-        # Send a final summary to the user via TTS
-        customer_name = self.order_state.get("name", "there")
-        extras_list = f" with {' and '.join(self.order_state['extras'])}" if self.order_state['extras'] else ''
-        summary = f"Got it, {customer_name}! Your order has been placed. That's one {self.order_state['size']} {self.order_state['drinkType']} with {self.order_state['milk']}{extras_list}. We'll have that ready shortly."
-        await context.session.say(summary)
-
+# --- Existing LiveKit Agent Functions ---
 
 def prewarm(proc: JobProcess):
     proc.userdata["vad"] = silero.VAD.load()
 
 
 async def entrypoint(ctx: JobContext):
+    # Logging setup
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
 
+    # Set up a voice AI pipeline 
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
         llm=google.LLM(
@@ -192,6 +163,7 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=True,
     )
 
+    # Metrics collection, to measure pipeline performance
     usage_collector = metrics.UsageCollector()
 
     @session.on("metrics_collected")
@@ -205,14 +177,16 @@ async def entrypoint(ctx: JobContext):
 
     ctx.add_shutdown_callback(log_usage)
 
+    # Start the session, passing the new WellnessAgent
     await session.start(
-        agent=BaristaAgent(),
+        agent=WellnessAgent(),
         room=ctx.room,
         room_input_options=RoomInputOptions(
             noise_cancellation=noise_cancellation.BVC(),
         ),
     )
 
+    # Join the room and connect to the user
     await ctx.connect()
 
 

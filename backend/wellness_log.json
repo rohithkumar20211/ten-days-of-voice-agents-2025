@@ -1,0 +1,19 @@
+[
+    {
+        "mood_summary": "Feeling okay, but energy is low (4/10) and overwhelmed by work deadlines.",
+        "objectives": [
+            "Finish the first half of proposal",
+            "Take a ten minute walk outside"
+        ],
+        "agent_reflection": "Even a short break like a ten-minute walk can make a difference in clearing your head and boosting energy.",
+        "date": "2025-11-24"
+    },
+    {
+        "mood_summary": "Feeling much better, energy up to 8/10. Completed previous objective of taking a walk.",
+        "objectives": [
+            "Present proposal"
+        ],
+        "agent_reflection": "Remember to take a few deep breaths before starting your presentation.",
+        "date": "2025-11-25"
+    }
+]
