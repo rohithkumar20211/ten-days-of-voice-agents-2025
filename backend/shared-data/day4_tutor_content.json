@@ -1,0 +1,30 @@
+[
+  {
+    "id": "f1_telemetry",
+    "title": "F1 Telemetry Data Processing",
+    "summary": "Telemetry data is the real-time stream of information from the car to the pit wall, including speed, gear, throttle, and brake usage. In programming, this high-volume data is often delivered as structured streams (e.g., JSON or binary packets), which must be processed using **loops** and **data structures** (like lists of objects or dictionaries) to calculate performance metrics, visualize driver behavior, or inform race strategy. Engineers use **conditional statements** (if/else) to filter and react to key events, such as detecting a driver hitting the brake pedal or the car exceeding a certain RPM threshold.",
+    "sample_question": "If you receive 1,000 data points per second, which programming structures are essential for analyzing this high volume of data efficiently?",
+    "teach_back_prompt": "Explain the concept of F1 Telemetry data. Tell me what two primary programming concepts (like loops, conditionals, or functions) you would use to process this stream of data and give a practical example of how an engineer would use that processed data during a race."
+  },
+  {
+    "id": "f1_simulation",
+    "title": "F1 Simulation and Modeling",
+    "summary": "F1 teams rely heavily on digital twin simulations to test car setups and race scenarios before hitting the track. This involves writing complex code that models real-world physics, aerodynamics, and tire degradation. The programming often uses **functions** to encapsulate specific physical calculations (e.g., drag force or downforce) and **Object-Oriented Programming (OOP)** to represent car components (like the engine, chassis, and tires) as reusable objects with their own properties and behaviors. Accurate **data types** (especially floating-point numbers) are crucial for precision.",
+    "sample_question": "Why is Object-Oriented Programming particularly well-suited for building an F1 car simulation model?",
+    "teach_back_prompt": "Teach me about the role of simulation in Formula 1. How do programming concepts like Functions and OOP help engineers create a digital twin of the car? Give an example of a car component that would be represented as a 'class' or 'object' in the code."
+  },
+  {
+    "id": "f1_strategy_algorithms",
+    "title": "Race Strategy Algorithms",
+    "summary": "Race strategy is determined by algorithms that analyze factors like tire wear, fuel load, track position, and weather. These algorithms are essentially programs that use **conditional logic** to make optimal decisions, such as when to pit or what tire compound to use next. They often rely on sophisticated **algorithms** to search through a massive decision tree of possible race outcomes. Understanding concepts like **Big O Notation** is vital for ensuring the strategy code can run quickly enough to provide real-time recommendations during a grand prix.",
+    "sample_question": "A strategy algorithm must decide the optimal lap for a pit stop. Which core programming concept (loops, conditionals, or data types) is most important for making this critical decision?",
+    "teach_back_prompt": "Explain the goal of a Race Strategy Algorithm. Describe how conditionals and an understanding of computational efficiency (like Big O) are used to help a team decide the best time to call a driver into the pits."
+  },
+  {
+    "id": "f1_lap_timing",
+    "title": "Lap Timing and Data Structures",
+    "summary": "Lap timing involves recording and analyzing the time a car takes to complete a lap, usually broken down into sector times. To store and compare historical lap data, programmers use **lists/arrays** to manage sequential lap times and **dictionaries/maps** to quickly retrieve a specific driver's or sector's best time. A **function** might be used to calculate a 'rolling average' lap time or find the difference (delta) between the current lap and the fastest lap, ensuring consistency and efficiency in analysis.",
+    "sample_question": "Which data structure is best for storing a driver's fastest lap time for every circuit on the F1 calendar, allowing for quick retrieval by circuit name?",
+    "teach_back_prompt": "Teach me about F1 lap timing data. How would you use a combination of functions and data structures (like lists and dictionaries) to store a large set of lap times and efficiently calculate the overall fastest lap of a session?"
+  }
+]
