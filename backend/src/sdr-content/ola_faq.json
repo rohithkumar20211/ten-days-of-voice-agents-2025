@@ -1,0 +1,31 @@
+{
+  "company_name": "Ola Cabs",
+  "product_name": "Ola Corporate & Fleet Management",
+  "sdr_pitch": "Ola is India's leading mobility platform, offering quick, reliable transportation across multiple vehicle classes. Our focus today is on Ola Corporate, designed to streamline employee travel, and our advanced fleet management solutions for partners.",
+  "faqs": [
+    {
+      "keywords": ["product", "do", "service", "features", "corporate"],
+      "answer": "Ola Corporate provides centralized billing, policy enforcement, and detailed analytics for employee travel, replacing manual expense reports. Our Fleet Management system offers real-time vehicle tracking, driver allocation, and maintenance scheduling for fleet partners."
+    },
+    {
+      "keywords": ["pricing", "cost", "charge", "commission", "setup fee"],
+      "answer": "Ola Corporate operates on a pay-per-use model with customizable pricing tiers based on usage volume. There is no setup fee, but corporate accounts require a minimum monthly commitment or usage volume to qualify for discounted rates."
+    },
+    {
+      "keywords": ["who is this for", "target audience", "ideal user", "client"],
+      "answer": "Ola Corporate is ideal for mid-to-large-sized companies that need to manage employee travel efficiently and transparently. Fleet Management is tailored for businesses and individuals owning 10 or more commercial vehicles."
+    },
+    {
+      "keywords": ["coverage", "cities", "regions", "tier 2"],
+      "answer": "Ola is operational in over 250 cities across India, offering extensive coverage that includes major metropolitan areas as well as tier-2 and tier-3 cities, ensuring mobility for your entire workforce."
+    },
+    {
+      "keywords": ["analytics", "reporting", "data"],
+      "answer": "Yes, Ola Corporate provides comprehensive dashboards for finance teams, offering real-time visibility into spending, policy compliance, and detailed reports for easy reconciliation and expense audit trails."
+    },
+    {
+      "keywords": ["timeline", "implement", "start"],
+      "answer": "Implementation for Ola Corporate is typically instant for small teams and takes less than one week for large enterprises, involving a brief setup process to onboard employees and define travel policies."
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+[
+    {
+        "name": null,
+        "company": null,
+        "email": null,
+        "role": null,
+        "use_case": null,
+        "team_size": null,
+        "timeline": null,
+        "faq_answered": 2
+    },
+    {
+        "name": null,
+        "company": null,
+        "email": null,
+        "role": null,
+        "use_case": null,
+        "team_size": null,
+        "timeline": null,
+        "faq_answered": 2
+    },
+    {
+        "name": "Amit Shah",
+        "company": "Maiko Consulting",
+        "email": "Amit.sha@gmail.com",
+        "role": "financial analyst",
+        "use_case": "algorithmic trading",
+        "team_size": "four people",
+        "timeline": "within the next month",
+        "faq_answered": 2
+    },
+    {
+        "name": "Rohit",
+        "company": "Tech Solutions India",
+        "email": "Rohitatdirect@gmail.com",
+        "role": "Head of Finance",
+        "use_case": "Reducing manual processing time for employee reimbursement",
+        "team_size": "Over 2",
+        "timeline": "Now, restructuring this quarter",
+        "faq_answered": 1
+    },
+    {
+        "name": "Rohit",
+        "company": "Tech Solutions India",
+        "email": "Rohitatdirect@gmail.com",
+        "role": "Head of Finance",
+        "use_case": "Reducing manual processing time for employee reimbursement",
+        "team_size": "Over 2",
+        "timeline": "Now, restructuring this quarter",
+        "faq_answered": 1
+    },
+    {
+        "name": "Rohit",
+        "company": "Tech Solutions India",
+        "email": "rohip@gmail.com",
+        "role": "head of finance",
+        "use_case": "reducing manual processing time for employee reimbursement",
+        "team_size": "over two hundred employees",
+        "timeline": "now as we are restructuring this quarter",
+        "faq_answered": 0
+    },
+    {
+        "name": "Rohit",
+        "company": "Fusion Tech",
+        "email": "karen at fusion dot com",
+        "role": "Project Manager",
+        "use_case": "managing client transport",
+        "team_size": "fifty",
+        "timeline": "now",
+        "faq_answered": 0
+    },
+    {
+        "name": "Rohit",
+        "company": "Fusion Tech",
+        "email": "karen at fusion dot com",
+        "role": "Project Manager",
+        "use_case": "managing client transport",
+        "team_size": "fifty",
+        "timeline": "now",
+        "faq_answered": 1
+    }
+]
