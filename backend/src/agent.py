@@ -1,214 +1,217 @@
 import logging
 import json
 import os
-from datetime import datetime
-from typing import Optional, Literal, List, Dict, Any
+import sqlite3
+from typing import Optional, Literal, Dict, Any, Tuple, List
 
-# Ensure .env.local is loaded first
 from dotenv import load_dotenv
-load_dotenv(".env.local")
-
-# Fix: Ensure all necessary classes are imported explicitly
 from livekit.agents import (
-    Agent,
-    AgentSession,
-    JobContext,
-    JobProcess, 
-    MetricsCollectedEvent,
-    RoomInputOptions,
-    WorkerOptions,
-    cli,
-    function_tool,
-    RunContext,
-    llm,
+    Agent, AgentSession, JobContext, JobProcess, RoomInputOptions,
+    WorkerOptions, cli, function_tool, RunContext, llm,
 )
 from livekit.plugins import murf, google, deepgram, silero, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
+load_dotenv(".env.local")
 
+# --- DAY 6: CONFIGURATION & DATABASE SETUP ---
+DB_FILE = 'fraud_cases.db'
+BANK_NAME = "Falcon Finance"
+SECURITY_QUESTION = "What is the 5-digit security identifier associated with the masked card number ending in 4242?"
 
-# --- DAY 5: CONFIGURATION ---
-# CRITICAL: Ensure this file exists in backend/src/sdr-content/
-FAQ_FILE = "src/sdr-content/ola_faq.json"
-LEAD_OUTPUT_FILE = "leads_log.json"
+# List of Case IDs to cycle through for the three scenarios
+# Each scenario will use a different ID.
+SCENARIO_CASE_IDS = [1, 2, 3] 
+CURRENT_RUN_ID = 3 # We will update this global variable before each run
 
-# Define the structured Lead Data fields
-INITIAL_LEAD_STATE = {
-    "name": None,
-    "company": None,
-    "email": None,
-    "role": None,
-    "use_case": None,
-    "team_size": None,
-    "timeline": None,
-    "faq_answered": 0,
+# The base sample fraud case data structure
+BASE_FRAUD_CASE_DATA = {
+    "user_name": "John Smith", "security_identifier": "12345", 
+    "card_ending": "4242", "transaction_amount": 799.99, "merchant_name": "ABC Tech Solutions", 
+    "transaction_location": "London, UK", "transaction_time": "approx 11:30 PM IST", 
+    "status": "pending_review", "outcome_note": None
 }
+# ---------------------------------------------
 
 # --- UTILITY FUNCTIONS ---
 
-def load_faq_content() -> Dict[str, Any]:
-    """Loads FAQ content for RAG."""
-    # Ensure the directory exists when loading (best practice)
-    if not os.path.exists(os.path.dirname(FAQ_FILE)):
-        os.makedirs(os.path.dirname(FAQ_FILE))
-        
-    try:
-        with open(FAQ_FILE, 'r') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to load FAQ content: {e}")
-        return {}
+def init_db():
+    """Initializes the SQLite database and ensures all required sample cases exist."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    
+    # Create the 'cases' table
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS cases (
+            id INTEGER PRIMARY KEY, user_name TEXT, security_identifier TEXT, card_ending TEXT, 
+            transaction_amount REAL, merchant_name TEXT, transaction_location TEXT, 
+            transaction_time TEXT, status TEXT, outcome_note TEXT
+        )
+    """)
+    
+    # Insert or reset cases for all SCENARIO_CASE_IDS
+    for case_id in SCENARIO_CASE_IDS:
+        cursor.execute("SELECT id FROM cases WHERE id = ?", (case_id,))
+        if cursor.fetchone() is None:
+            # Insert new case with base data and pending status
+            case = BASE_FRAUD_CASE_DATA.copy()
+            cursor.execute("""
+                INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                case_id, case['user_name'], case['security_identifier'], case['card_ending'], 
+                case['transaction_amount'], case['merchant_name'], case['transaction_location'], 
+                case['transaction_time'], case['status'], case['outcome_note']
+            ))
+        else:
+            # Ensure existing case status is pending_review for a fresh start
+            cursor.execute("""
+                UPDATE cases SET status = 'pending_review', outcome_note = NULL WHERE id = ?
+            """, (case_id,))
+            
+    conn.commit()
+    conn.close()
 
-def simple_faq_search(faq_content: List[Dict], user_query: str) -> Optional[str]:
-    """Performs a simple keyword search over FAQ keywords."""
-    query = user_query.lower()
-    for entry in faq_content:
-        # Check if any keyword in the FAQ entry is present in the user's query
-        if any(keyword in query for keyword in entry.get("keywords", [])):
-            return entry["answer"]
+def load_case(case_id: int) -> Optional[Dict]:
+    """Loads a specific fraud case from the database."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
+    row = cursor.fetchone()
+    conn.close()
+    if row:
+        cols = ["id", "user_name", "security_identifier", "card_ending", "transaction_amount", 
+                "merchant_name", "transaction_location", "transaction_time", "status", "outcome_note"]
+        return dict(zip(cols, row))
     return None
+
+def update_case_status(case_id: int, status: str, outcome_note: str):
+    """Updates the status and outcome note for a fraud case in the database."""
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("""
+        UPDATE cases SET status = ?, outcome_note = ? WHERE id = ?
+    """, (status, outcome_note, case_id))
+    conn.commit()
+    conn.close()
+    
+    logger.info("=" * 50)
+    logger.info(f"✅ DAY 6 STATUS UPDATE: Case ID {case_id} Final Status: {status}")
+    logger.info(f"Outcome Note: {outcome_note}")
+    logger.info("=" * 50)
 
 # --- AGENT DEFINITION ---
 
-class SdrAgent(Agent):
-    def __init__(self, faq_data: Dict[str, Any]) -> None:
-        self.faq_data = faq_data
-        self.lead_state = INITIAL_LEAD_STATE.copy()
+class FraudAgent(Agent):
+    def __init__(self, fraud_case: Dict[str, Any]) -> None:
+        self.case = fraud_case
+        self.bank_name = BANK_NAME
+        self.security_answer = self.case['security_identifier']
+        self.verification_passed = False 
         
-        company = faq_data.get("company_name", "Our Company")
-        pitch = faq_data.get("sdr_pitch", "a cutting-edge product.")
-        
-        # Set up the SDR persona (Prompt Designing)
-        sdr_instructions = (
-            f"You are a friendly Sales Development Representative (SDR) for {company}'s platform. "
-            "Your main goal is to understand the visitor's needs and collect ALL lead information (Name, Company, Email, Role, Use Case, Team Size, and Timeline). "
-            "**CRITICAL RULE: Call 'update_lead_state' immediately every time the user provides a detail (Name, Email, Role, Use Case, etc.) to store it.** "
-            f"Start with a warm greeting and ask what they are working on. Use the 'answer_faq' tool to address questions about the product, pricing, or audience. "
-            "If the user says 'That's all' or 'I'm done', call the 'save_lead_summary' tool immediately. "
-            f"Company pitch: {pitch}"
+        instructions = (
+            f"You are a professional fraud detection representative from {self.bank_name}. "
+            "Your call flow MUST be: 1. Introduce yourself and the call's purpose. 2. Verify the customer using the security question provided in the context. 3. If verification passes, read the suspicious transaction details and ask for confirmation (Yes/No). 4. Call the 'mark_transaction_outcome' tool only when the final decision (safe/fraudulent) is known or verification fails. "
+            f"Security Question: {SECURITY_QUESTION}. Expected Answer: {self.security_answer}. "
+            "Keep language calm and reassuring."
         )
 
-        super().__init__(instructions=sdr_instructions)
-        # Expose all three tools
-        self.update_tools([self.answer_faq, self.save_lead_summary, self.update_lead_state]) 
+        super().__init__(instructions=instructions)
+        self.update_tools([self.mark_transaction_outcome])
 
     async def on_connected(self) -> None:
         await self.session.say(
-            f"Hello! Thank you for visiting {self.faq_data['company_name']}. I'm your dedicated SDR. "
-            "What brought you here today, and what project are you currently working on?"
+            f"Hello, this is the Fraud Detection Department from **{self.bank_name}** calling for **{self.case['user_name']}.** "
+            "We detected a suspicious transaction and need to confirm your identity before proceeding. "
+            f"To verify, please tell me: **{SECURITY_QUESTION}**"
+        )
+        
+    def _read_transaction_details(self) -> str:
+        """Helper to format and read out the suspicious transaction details."""
+        currency = "GBP" if "london" in self.case['transaction_location'].lower() else "INR"
+        
+        return (
+            f"Thank you. We detected a transaction on your card ending in {self.case['card_ending']} "
+            f"for the amount of **{self.case['transaction_amount']} {currency}** " 
+            f"at **{self.case['merchant_name']}** in {self.case['transaction_location']} "
+            f"around {self.case['transaction_time']}. "
+            "Did you authorize this transaction? Please answer with 'Yes' or 'No'."
         )
 
     @function_tool
-    async def answer_faq(self, ctx: RunContext, query: str) -> str:
-        """Looks up the user's question in the FAQ content and returns the answer."""
-        
-        answer = simple_faq_search(self.faq_data.get("faqs", []), query)
-        
-        if answer:
-            self.lead_state['faq_answered'] = self.lead_state.get('faq_answered', 0) + 1
-            
-            # CRITICAL: After answering, the LLM must call update_lead_state next to prompt for details.
-            return f"Yes, I can tell you that: {answer}. Now, based on what you told me, please call the 'update_lead_state' tool next to gather your details."
-        
-        return "I apologize, I don't have that specific information in my current knowledge base. Is there anything else I can help you with regarding our product?"
-
-    @function_tool
-    async def update_lead_state(
-        self,
-        ctx: RunContext,
-        name: Optional[str] = None,
-        company: Optional[str] = None,
-        email: Optional[str] = None,
-        role: Optional[str] = None,
-        use_case: Optional[str] = None,
-        team_size: Optional[str] = None,
-        timeline: Optional[str] = None,
+    async def mark_transaction_outcome(
+        self, 
+        ctx: RunContext, 
+        user_response: Literal["yes", "no", "verification_failed"], 
+        security_answer_provided: Optional[str] = None
     ) -> str:
-        """Called by the LLM every time the user provides any piece of lead information (name, email, role, etc.)."""
+        """Tool to handle verification and mark the final outcome."""
         
-        # 1. Update the state with extracted arguments
-        updates = {k: v for k, v in locals().items() if v is not None and k in self.lead_state}
-        self.lead_state.update(updates)
-        
-        # 2. Check for missing fields to prompt the LLM for the next step
-        missing_fields = [k.replace('_', ' ') for k, v in self.lead_state.items() if v is None and k != 'faq_answered']
-        
-        if missing_fields:
-            # Tell the LLM what is still missing so it can ask for the next piece of data
-            return f"Lead state updated. The following is still missing: {', '.join(missing_fields)}. Please politely ask the user for the next missing piece of information."
-        else:
-            return "Lead state is complete. Proceed with the final summary or ask if the user has other questions."
+        global CURRENT_RUN_ID # Use the global variable
+        case_id = CURRENT_RUN_ID
+        current_status = self.case['status']
 
-    @function_tool
-    async def save_lead_summary(self, ctx: RunContext) -> str:
-        """Gives a final verbal summary and saves the complete lead data to a JSON file."""
-        
-        # 1. Verbal Summary (using the now-updated self.lead_state)
-        name = self.lead_state.get("name", "a valuable prospect")
-        use_case = self.lead_state.get("use_case", "unspecified needs")
-        timeline = self.lead_state.get("timeline", "later")
-        
-        final_summary = (
-            f"Thank you, {name}. I've captured your details. Just to quickly recap: "
-            f"You are interested in using our platform for **{use_case}**, and your rough timeline is **{timeline}**. "
-            "I'm saving this summary now for our sales team."
-        )
-        await ctx.session.say(final_summary)
-
-        # 2. Save to JSON
-        try:
-            if os.path.exists(LEAD_OUTPUT_FILE):
-                with open(LEAD_OUTPUT_FILE, 'r+') as f:
-                    data = json.load(f)
-                    if not isinstance(data, list):
-                        data = []
-                    data.append(self.lead_state)
-                    f.seek(0)
-                    json.dump(data, f, indent=4)
-            else:
-                with open(LEAD_OUTPUT_FILE, 'w') as f:
-                    json.dump([self.lead_state], f, indent=4)
+        if current_status == "pending_review":
+            # --- 1. Verification Logic ---
+            if not self.verification_passed:
+                if security_answer_provided == self.security_answer:
+                    self.verification_passed = True
+                    
+                    transaction_details = self._read_transaction_details()
+                    await ctx.session.say(transaction_details)
+                    
+                    return "Verification successful. Read transaction details and ask user for confirmation (yes/no). Call this tool again with the final outcome."
+                else:
+                    # Verification failed
+                    update_case_status(case_id, "verification_failed", "Customer failed basic security question.")
+                    await ctx.session.say("I'm sorry, I cannot verify your identity with that information. For your security, we cannot proceed with this call. Please call the number on the back of your card.")
+                    return "Verification failed. End the call."
             
-            # Print confirmation to the terminal (for video recording proof)
-            logger.info("=" * 50)
-            logger.info(f"✅ DAY 5 PRIMARY GOAL COMPLETE! Lead Saved to: {LEAD_OUTPUT_FILE}")
-            logger.info(json.dumps(self.lead_state, indent=4))
-            logger.info("=" * 50)
-
-            return "Lead saved successfully. Thank the user and end the call warmly."
-        except Exception as e:
-            return f"An error occurred while saving the lead data: {e}. Please try again."
+            # --- 2. Outcome Logic (Verification already passed) ---
+            else:
+                if user_response == "yes":
+                    update_case_status(case_id, "confirmed_safe", "Customer confirmed transaction as legitimate.")
+                    await ctx.session.say("Thank you for confirming. We have marked the transaction as legitimate. There is no further action required. Have a safe day.")
+                    return "Transaction marked safe. End the call."
+                
+                elif user_response == "no":
+                    update_case_status(case_id, "confirmed_fraud", "Customer denied transaction. Card blocked and dispute initiated (mock).")
+                    await ctx.session.say("Understood. We have immediately blocked your card and initiated a dispute for this fraudulent activity. You will receive a follow-up SMS shortly. Thank you for helping us protect your account. Goodbye.")
+                    return "Transaction marked fraudulent. End the call."
+                
+        return "I am waiting for your security answer or a yes/no confirmation. Please provide the missing information."
 
 # --- ENTRYPOINT AND MAIN PROCESS ---
 
 def prewarm(proc: JobProcess):
-    """Prewarm models and load SDR content."""
+    """Initializes DB and prewarms VAD."""
+    # Initialize the database and ensure the sample cases exist
+    init_db() 
     proc.userdata["vad"] = silero.VAD.load()
-    # Load FAQ content into worker process memory
-    proc.userdata["faq_data"] = load_faq_content()
 
 
 async def entrypoint(ctx: JobContext):
+    global CURRENT_RUN_ID # Use global variable to load the correct case
     ctx.log_context_fields = {"room": ctx.room.name}
     
-    faq_data = ctx.proc.userdata.get("faq_data")
+    # Load the specific fraud case based on the global run ID
+    fraud_case = load_case(CURRENT_RUN_ID)
+
+    if not fraud_case:
+        logger.error(f"Could not load fraud case ID {CURRENT_RUN_ID}. Exiting job.")
+        return
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
-        llm=google.LLM(
-            model="gemini-2.5-flash",
-            # We rely on the CRITICAL RULE and update_lead_state tool, 
-            # as extract_context_fields is not supported in this SDK version.
-        ),
+        llm=google.LLM(model="gemini-2.5-flash"),
         tts=murf.TTS(voice="en-US-matthew", style="Conversation"),
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
         preemptive_generation=True,
     )
 
-    # Initialize the agent with the loaded FAQ data
-    agent = SdrAgent(faq_data=faq_data)
+    # Initialize the agent with the loaded fraud data
+    agent = FraudAgent(fraud_case=fraud_case)
 
     await session.start(
         agent=agent,
