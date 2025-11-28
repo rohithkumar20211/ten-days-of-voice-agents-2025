@@ -1,0 +1,27 @@
+[
+  {
+    "recipe_name": "peanut butter sandwich",
+    "required_items": [
+      {"item_name": "Whole Wheat Bread", "quantity": 1},
+      {"item_name": "Peanut Butter", "quantity": 1}
+    ],
+    "confirmation_message": "I've added one loaf of Whole Wheat Bread and one jar of Peanut Butter for your sandwich."
+  },
+  {
+    "recipe_name": "pasta dinner",
+    "required_items": [
+      {"item_name": "Spaghetti Pasta", "quantity": 1},
+      {"item_name": "Jarred Tomato Sauce", "quantity": 1}
+    ],
+    "confirmation_message": "I've added Spaghetti Pasta and Jarred Tomato Sauce for your pasta dinner."
+  },
+  {
+    "recipe_name": "tacos",
+    "required_items": [
+      {"item_name": "Ground Beef (1lb)", "quantity": 1},
+      {"item_name": "Cheddar Cheese", "quantity": 1},
+      {"item_name": "Tortilla Chips (Large)", "quantity": 1}
+    ],
+    "confirmation_message": "Perfect! I've added ground beef, cheddar cheese, and tortilla chips, which are the main ingredients for a taco night."
+  }
+]

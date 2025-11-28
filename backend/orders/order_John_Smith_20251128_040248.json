@@ -1,0 +1,38 @@
+{
+  "order_id": "QM-20251128-1ACFA0",
+  "timestamp": "2025-11-28T04:02:48.964841",
+  "customer_info": {
+    "name": "John Smith",
+    "address": "Four Fifty Six Demo Street"
+  },
+  "items": [
+    {
+      "item_id": "G001",
+      "name": "Whole Wheat Bread",
+      "price_usd": 3.5,
+      "unit": "loaf",
+      "quantity": 1,
+      "line_total_usd": 3.5
+    },
+    {
+      "item_id": "S002",
+      "name": "Peanut Butter",
+      "price_usd": 4.99,
+      "unit": "16 oz jar",
+      "quantity": 1,
+      "line_total_usd": 4.99
+    },
+    {
+      "item_id": "G002",
+      "name": "Large Eggs",
+      "price_usd": 4.0,
+      "unit": "dozen",
+      "quantity": 24,
+      "line_total_usd": 96.0
+    }
+  ],
+  "subtotal_usd": 104.49,
+  "tax_usd": 8.36,
+  "order_total_usd": 112.85,
+  "status": "received"
+}

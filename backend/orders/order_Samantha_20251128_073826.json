@@ -1,0 +1,46 @@
+{
+  "order_id": "QM-20251128-8222B6",
+  "timestamp": "2025-11-28T07:38:26.386249",
+  "customer_info": {
+    "name": "Samantha",
+    "address": "apartment four zero four"
+  },
+  "items": [
+    {
+      "item_id": "G004",
+      "name": "Spaghetti Pasta",
+      "price_usd": 1.99,
+      "unit": "16 oz box",
+      "quantity": 1,
+      "line_total_usd": 1.99
+    },
+    {
+      "item_id": "G005",
+      "name": "Jarred Tomato Sauce",
+      "price_usd": 3.75,
+      "unit": "24 oz jar",
+      "quantity": 1,
+      "line_total_usd": 3.75
+    },
+    {
+      "item_id": "G003",
+      "name": "Milk",
+      "price_usd": 2.99,
+      "unit": "gallon",
+      "quantity": 2,
+      "line_total_usd": 5.98
+    },
+    {
+      "item_id": "S002",
+      "name": "Peanut Butter",
+      "price_usd": 4.99,
+      "unit": "16 oz jar",
+      "quantity": 1,
+      "line_total_usd": 4.99
+    }
+  ],
+  "subtotal_usd": 16.71,
+  "tax_usd": 1.34,
+  "order_total_usd": 18.05,
+  "status": "received"
+}

@@ -1,224 +1,334 @@
 import logging
 import json
 import os
-import sqlite3
-from typing import Optional, Literal, Dict, Any, Tuple, List
+from datetime import datetime
+import uuid
+from typing import List, Dict, Any, Optional
 
 from dotenv import load_dotenv
 from livekit.agents import (
-    Agent, AgentSession, JobContext, JobProcess, RoomInputOptions,
-    WorkerOptions, cli, function_tool, RunContext, llm,
+    Agent,
+    AgentSession,
+    JobContext,
+    JobProcess,
+    MetricsCollectedEvent,
+    RoomInputOptions,
+    WorkerOptions,
+    cli,
+    metrics,
+    tokenize,
+    function_tool,
+    RunContext
 )
-from livekit.plugins import murf, google, deepgram, silero, noise_cancellation
+from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
 logger = logging.getLogger("agent")
+
 load_dotenv(".env.local")
 
-# --- DAY 6: CONFIGURATION & DATABASE SETUP ---
-DB_FILE = 'fraud_cases.db'
-BANK_NAME = "Falcon Finance"
-SECURITY_QUESTION = "What is the 5-digit security identifier associated with the masked card number ending in 4242?"
+# --- Configuration and Data Paths ---
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+CATALOG_FILE = os.path.join(DATA_DIR, "catalog.json")
+RECIPES_FILE = os.path.join(DATA_DIR, "recipes.json")
+# Orders will be saved one directory up from the 'src' folder, e.g., 'backend/orders'
+ORDERS_DIR = os.path.join(os.path.dirname(__file__), "..", "orders")
+TAX_RATE = 0.08  # 8% sales tax
 
-# List of Case IDs to cycle through for the three scenarios
-# Each scenario will use a different ID.
-SCENARIO_CASE_IDS = [1, 2, 3] 
-CURRENT_RUN_ID = 3 # We will update this global variable before each run
+def load_json_file(filepath: str) -> List[Dict[str, Any]]:
+    """Helper function to load catalog or recipes data."""
+    if not os.path.exists(filepath):
+        # Create data directory if it doesn't exist to avoid crashing
+        os.makedirs(os.path.dirname(filepath), exist_ok=True)
+        print(f"Error: File not found at {filepath}. Please create it.")
+        return []
+    try:
+        with open(filepath, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        print(f"Error: Could not decode JSON from {filepath}. Check formatting.")
+        return []
 
-# The base sample fraud case data structure
-BASE_FRAUD_CASE_DATA = {
-    "user_name": "John Smith", "security_identifier": "12345", 
-    "card_ending": "4242", "transaction_amount": 799.99, "merchant_name": "ABC Tech Solutions", 
-    "transaction_location": "London, UK", "transaction_time": "approx 11:30 PM IST", 
-    "status": "pending_review", "outcome_note": None
-}
-# ---------------------------------------------
 
-# --- UTILITY FUNCTIONS ---
+class Assistant(Agent):
+    def __init__(self) -> None:
+        # Load data and initialize cart state in the agent instance
+        self.catalog = load_json_file(CATALOG_FILE)
+        self.recipes = load_json_file(RECIPES_FILE)
+        self.catalog_map = {item['name'].lower(): item for item in self.catalog}
+        self.recipes_map = {recipe['recipe_name'].lower(): recipe for recipe in self.recipes}
+        self.cart: List[Dict[str, Any]] = []
 
-def init_db():
-    """Initializes the SQLite database and ensures all required sample cases exist."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    
-    # Create the 'cases' table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS cases (
-            id INTEGER PRIMARY KEY, user_name TEXT, security_identifier TEXT, card_ending TEXT, 
-            transaction_amount REAL, merchant_name TEXT, transaction_location TEXT, 
-            transaction_time TEXT, status TEXT, outcome_note TEXT
-        )
-    """)
-    
-    # Insert or reset cases for all SCENARIO_CASE_IDS
-    for case_id in SCENARIO_CASE_IDS:
-        cursor.execute("SELECT id FROM cases WHERE id = ?", (case_id,))
-        if cursor.fetchone() is None:
-            # Insert new case with base data and pending status
-            case = BASE_FRAUD_CASE_DATA.copy()
-            cursor.execute("""
-                INSERT INTO cases VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                case_id, case['user_name'], case['security_identifier'], case['card_ending'], 
-                case['transaction_amount'], case['merchant_name'], case['transaction_location'], 
-                case['transaction_time'], case['status'], case['outcome_note']
-            ))
-        else:
-            # Ensure existing case status is pending_review for a fresh start
-            cursor.execute("""
-                UPDATE cases SET status = 'pending_review', outcome_note = NULL WHERE id = ?
-            """, (case_id,))
+        # Ensure orders directory exists
+        os.makedirs(ORDERS_DIR, exist_ok=True)
+
+        super().__init__(
+            instructions="""You are **QuickMart's friendly food and grocery ordering assistant**. 
+            Your primary job is to help the user order items from our catalog. You must use the provided tools to manage the user's cart. 
+            Your responses should be encouraging, concise, and focused on helping the user shop. 
             
-    conn.commit()
-    conn.close()
-
-def load_case(case_id: int) -> Optional[Dict]:
-    """Loads a specific fraud case from the database."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT * FROM cases WHERE id = ?", (case_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        cols = ["id", "user_name", "security_identifier", "card_ending", "transaction_amount", 
-                "merchant_name", "transaction_location", "transaction_time", "status", "outcome_note"]
-        return dict(zip(cols, row))
-    return None
-
-def update_case_status(case_id: int, status: str, outcome_note: str):
-    """Updates the status and outcome note for a fraud case in the database."""
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("""
-        UPDATE cases SET status = ?, outcome_note = ? WHERE id = ?
-    """, (status, outcome_note, case_id))
-    conn.commit()
-    conn.close()
+            **Key instructions:**
+            1. Always confirm back to the user what you have added or removed from their cart.
+            2. When the user says they are done, for example: "Place my order", "I'm done", or "That's all", you **must** call the `place_order` tool.
+            3. If the user asks what they need for a meal (e.g., "ingredients for a sandwich"), use the `add_ingredients_for_recipe` tool.
+            4. Only use your general knowledge if the tools cannot answer a non-ordering question.
+            Your responses are concise, to the point, and without any complex formatting including emojis, asterisks, or other weird symbols.""",
+        )
+        logger.info("QuickMart Agent Initialized. Catalog and Recipes Loaded.")
     
-    logger.info("=" * 50)
-    logger.info(f"✅ DAY 6 STATUS UPDATE: Case ID {case_id} Final Status: {status}")
-    logger.info(f"Outcome Note: {outcome_note}")
-    logger.info("=" * 50)
+    # --- Internal Helper Methods (Synchronous Logic) ---
 
-# --- AGENT DEFINITION ---
+    def _get_item_details(self, item_name: str) -> Optional[Dict[str, Any]]:
+        """Looks up item details by name in the catalog."""
+        return self.catalog_map.get(item_name.lower())
 
-class FraudAgent(Agent):
-    def __init__(self, fraud_case: Dict[str, Any]) -> None:
-        self.case = fraud_case
-        self.bank_name = BANK_NAME
-        self.security_answer = self.case['security_identifier']
-        self.verification_passed = False 
+    def _calculate_total(self) -> Dict[str, float]:
+        """Calculates the subtotal, tax, and grand total of the current cart."""
+        subtotal = 0.0
+        for item in self.cart:
+            subtotal += item['line_total_usd']
+
+        tax = subtotal * TAX_RATE
+        total = subtotal + tax
+
+        return {
+            "subtotal_usd": round(subtotal, 2),
+            "tax_usd": round(tax, 2),
+            "order_total_usd": round(total, 2)
+        }
+    
+    # NEW SYNCHRONOUS HELPER for adding item
+    def _add_item_to_cart_sync(self, item_name: str, quantity: int) -> str:
+        """Internal synchronous function to add an item to the cart."""
+        if quantity <= 0:
+            return f"Please specify a quantity greater than zero to add {item_name}."
+
+        item_details = self._get_item_details(item_name)
+        if not item_details:
+            return f"I'm sorry, I couldn't find '{item_name}' in our catalog. Could you please specify a different item?"
+
+        # Prepare cart item details
+        price = item_details['price_usd']
+        cart_item_template = {
+            "item_id": item_details['item_id'],
+            "name": item_details['name'],
+            "price_usd": price,
+            "unit": item_details.get('unit', 'unit')
+        }
+
+        # Check if item is already in cart to update quantity
+        existing_item = next((item for item in self.cart if item['item_id'] == cart_item_template['item_id']), None)
         
-        instructions = (
-            f"You are a professional fraud detection representative from {self.bank_name}. "
-            "Your call flow MUST be: 1. Introduce yourself and the call's purpose. 2. Verify the customer using the security question provided in the context. 3. If verification passes, read the suspicious transaction details and ask for confirmation (Yes/No). 4. Call the 'mark_transaction_outcome' tool only when the final decision (safe/fraudulent) is known or verification fails. "
-            f"Security Question: {SECURITY_QUESTION}. Expected Answer: {self.security_answer}. "
-            "Keep language calm and reassuring."
-        )
+        if existing_item:
+            existing_item['quantity'] += quantity
+            existing_item['line_total_usd'] = round(price * existing_item['quantity'], 2)
+            return f"Updated: Added {quantity} more of {item_name}. You now have {existing_item['quantity']} total in the cart."
+        else:
+            new_item = cart_item_template.copy()
+            new_item['quantity'] = quantity
+            new_item['line_total_usd'] = round(price * quantity, 2)
+            self.cart.append(new_item)
+            return f"Added {quantity} of {item_name} to your cart. Is there anything else you need?"
 
-        super().__init__(instructions=instructions)
-        self.update_tools([self.mark_transaction_outcome])
+    # NEW SYNCHRONOUS HELPER for removing item
+    def _remove_item_from_cart_sync(self, item_name: str, quantity: Optional[int] = None) -> str:
+        """Internal synchronous function to remove an item from the cart."""
+        item_details = self._get_item_details(item_name)
+        if not item_details:
+            return f"I couldn't find '{item_name}' in your cart or the catalog to remove it."
 
-    async def on_connected(self) -> None:
-        await self.session.say(
-            f"Hello, this is the Fraud Detection Department from **{self.bank_name}** calling for **{self.case['user_name']}.** "
-            "We detected a suspicious transaction and need to confirm your identity before proceeding. "
-            f"To verify, please tell me: **{SECURITY_QUESTION}**"
-        )
+        item_id = item_details['item_id']
+        existing_item = next((item for item in self.cart if item['item_id'] == item_id), None)
+
+        if not existing_item:
+            return f"'{item_name}' is not currently in your cart."
+
+        if quantity is None or quantity >= existing_item['quantity']:
+            self.cart = [item for item in self.cart if item['item_id'] != item_id]
+            return f"Removed all units of {item_name} from your cart."
         
-    def _read_transaction_details(self) -> str:
-        """Helper to format and read out the suspicious transaction details."""
-        currency = "GBP" if "london" in self.case['transaction_location'].lower() else "INR"
-        
-        return (
-            f"Thank you. We detected a transaction on your card ending in {self.case['card_ending']} "
-            f"for the amount of **{self.case['transaction_amount']} {currency}** " 
-            f"at **{self.case['merchant_name']}** in {self.case['transaction_location']} "
-            f"around {self.case['transaction_time']}. "
-            "Did you authorize this transaction? Please answer with 'Yes' or 'No'."
-        )
+        # Reduce quantity
+        if quantity <= 0:
+            return f"Please specify a positive quantity to remove from {item_name}."
+            
+        existing_item['quantity'] -= quantity
+        existing_item['line_total_usd'] = round(existing_item['price_usd'] * existing_item['quantity'], 2)
+        return f"Removed {quantity} of {item_name}. You now have {existing_item['quantity']} remaining. Anything else?"
+
+
+    # --- Agent Tools (Callable by LLM) ---
 
     @function_tool
-    async def mark_transaction_outcome(
-        self, 
-        ctx: RunContext, 
-        user_response: Literal["yes", "no", "verification_failed"], 
-        security_answer_provided: Optional[str] = None
-    ) -> str:
-        """Tool to handle verification and mark the final outcome."""
+    async def add_item_to_cart(self, context: RunContext, item_name: str, quantity: int) -> str:
+        """
+        Adds a specific item and quantity to the cart, or updates the quantity if the item is already present.
         
-        global CURRENT_RUN_ID # Use the global variable
-        case_id = CURRENT_RUN_ID
-        current_status = self.case['status']
+        Args:
+            item_name: The name of the item to add (e.g., "Large Eggs", "Whole Wheat Bread").
+            quantity: The number of units to add (must be a positive integer).
+        """
+        # Call the synchronous helper
+        return self._add_item_to_cart_sync(item_name, quantity)
 
-        if current_status == "pending_review":
-            # --- 1. Verification Logic ---
-            if not self.verification_passed:
-                if security_answer_provided == self.security_answer:
-                    self.verification_passed = True
-                    
-                    transaction_details = self._read_transaction_details()
-                    await ctx.session.say(transaction_details)
-                    
-                    return "Verification successful. Read transaction details and ask user for confirmation (yes/no). Call this tool again with the final outcome."
-                else:
-                    # Verification failed
-                    update_case_status(case_id, "verification_failed", "Customer failed basic security question.")
-                    await ctx.session.say("I'm sorry, I cannot verify your identity with that information. For your security, we cannot proceed with this call. Please call the number on the back of your card.")
-                    return "Verification failed. End the call."
+
+    @function_tool
+    async def remove_item_from_cart(self, context: RunContext, item_name: str, quantity: Optional[int] = None) -> str:
+        """
+        Removes an item from the cart or reduces its quantity.
+
+        Args:
+            item_name: The name of the item to remove.
+            quantity: The amount to remove. If None or greater than current quantity, removes all of the item.
+        """
+        # Call the synchronous helper
+        return self._remove_item_from_cart_sync(item_name, quantity)
+
+
+    @function_tool
+    async def add_ingredients_for_recipe(self, context: RunContext, recipe_name: str) -> str:
+        """
+        Adds multiple items for a common meal/recipe (e.g., a 'peanut butter sandwich') to the cart.
+        
+        Args:
+            recipe_name: The name of the recipe (e.g., "pasta dinner", "tacos").
+        """
+        recipe = self.recipes_map.get(recipe_name.lower())
+        if not recipe:
+            return f"I'm sorry, I don't have a recipe for '{recipe_name}' in my system. I can still add items one by one."
+
+        for required in recipe['required_items']:
+            item_name = required['item_name']
+            quantity = required['quantity']
             
-            # --- 2. Outcome Logic (Verification already passed) ---
-            else:
-                if user_response == "yes":
-                    update_case_status(case_id, "confirmed_safe", "Customer confirmed transaction as legitimate.")
-                    await ctx.session.say("Thank you for confirming. We have marked the transaction as legitimate. There is no further action required. Have a safe day.")
-                    return "Transaction marked safe. End the call."
-                
-                elif user_response == "no":
-                    update_case_status(case_id, "confirmed_fraud", "Customer denied transaction. Card blocked and dispute initiated (mock).")
-                    await ctx.session.say("Understood. We have immediately blocked your card and initiated a dispute for this fraudulent activity. You will receive a follow-up SMS shortly. Thank you for helping us protect your account. Goodbye.")
-                    return "Transaction marked fraudulent. End the call."
-                
-        return "I am waiting for your security answer or a yes/no confirmation. Please provide the missing information."
+            # *** FIX APPLIED HERE: CALLING THE SYNCHRONOUS HELPER ***
+            self._add_item_to_cart_sync(item_name, quantity)
 
-# --- ENTRYPOINT AND MAIN PROCESS ---
+        return recipe['confirmation_message']
+
+    @function_tool
+    async def list_cart_contents(self, context: RunContext) -> str:
+        """
+        Lists the contents of the current cart, including the estimated subtotal.
+
+        Returns:
+            A formatted string summary of the cart.
+        """
+        if not self.cart:
+            return "Your cart is empty. What would you like to order first?"
+
+        totals = self._calculate_total()
+        
+        response = "Here's what's in your cart:\n"
+        for item in self.cart:
+            response += f"- {item['quantity']} x {item['name']} (Total: ${item['line_total_usd']:.2f})\n"
+
+        response += f"\nYour current estimated subtotal is ${totals['subtotal_usd']:.2f}."
+        return response
+
+    @function_tool
+    async def place_order(self, context: RunContext, customer_name: str = "Customer", address: str = "Unknown Address") -> str:
+        """
+        Finalizes the order, calculates the total, saves it to a JSON file, and clears the cart.
+        This must be called when the user indicates they are done ordering (e.g., "Place my order").
+
+        Args:
+            customer_name: The customer's name for the order record (can be generic if unknown).
+            address: The delivery address or a simple customer note.
+        """
+        if not self.cart:
+            return "I can't place an order because your cart is empty. Please add some items first."
+
+        totals = self._calculate_total()
+        order_id = f"QM-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+        timestamp = datetime.now().isoformat()
+
+        # Construct the final order object
+        order_data = {
+            "order_id": order_id,
+            "timestamp": timestamp,
+            "customer_info": {
+                "name": customer_name,
+                "address": address
+            },
+            "items": self.cart,
+            "subtotal_usd": totals['subtotal_usd'],
+            "tax_usd": totals['tax_usd'],
+            "order_total_usd": totals['order_total_usd'],
+            "status": "received"
+        }
+
+        # Save the order to a JSON file
+        filename = os.path.join(ORDERS_DIR, f"order_{customer_name.replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
+        try:
+            with open(filename, 'w') as f:
+                json.dump(order_data, f, indent=2)
+        except Exception as e:
+            logger.error(f"Error saving order to file: {e}")
+            return f"I encountered an error while trying to save your order, but your total is ${totals['order_total_usd']:.2f}. Your order has been placed but may not be logged correctly."
+
+        # Clear the cart after placing the order
+        self.cart = []
+        
+        # Final confirmation to the user
+        confirmation = (
+            f"Thank you for your order, {customer_name}! "
+            f"Your order ID is {order_id}. "
+            f"The final total is ${totals['order_total_usd']:.2f} (including ${totals['tax_usd']:.2f} in tax). "
+            f"Your order has been placed and saved successfully!"
+        )
+        return confirmation
+
 
 def prewarm(proc: JobProcess):
-    """Initializes DB and prewarms VAD."""
-    # Initialize the database and ensure the sample cases exist
-    init_db() 
     proc.userdata["vad"] = silero.VAD.load()
 
 
 async def entrypoint(ctx: JobContext):
-    global CURRENT_RUN_ID # Use global variable to load the correct case
-    ctx.log_context_fields = {"room": ctx.room.name}
-    
-    # Load the specific fraud case based on the global run ID
-    fraud_case = load_case(CURRENT_RUN_ID)
-
-    if not fraud_case:
-        logger.error(f"Could not load fraud case ID {CURRENT_RUN_ID}. Exiting job.")
-        return
+    # Logging setup
+    ctx.log_context_fields = {
+        "room": ctx.room.name,
+    }
 
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
-        llm=google.LLM(model="gemini-2.5-flash"),
-        tts=murf.TTS(voice="en-US-matthew", style="Conversation"),
+        llm=google.LLM(
+                model="gemini-2.5-flash",
+            ),
+        tts=murf.TTS(
+                voice="en-US-matthew", 
+                style="Conversation",
+                tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
+                text_pacing=True
+            ),
         turn_detection=MultilingualModel(),
         vad=ctx.proc.userdata["vad"],
         preemptive_generation=True,
     )
 
-    # Initialize the agent with the loaded fraud data
-    agent = FraudAgent(fraud_case=fraud_case)
+    # Metrics collection, to measure pipeline performance
+    usage_collector = metrics.UsageCollector()
 
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        metrics.log_metrics(ev.metrics)
+        usage_collector.collect(ev.metrics)
+
+    async def log_usage():
+        summary = usage_collector.get_summary()
+        logger.info(f"Usage: {summary}")
+
+    ctx.add_shutdown_callback(log_usage)
+
+    # Start the session, which initializes the voice pipeline and warms up the models
     await session.start(
-        agent=agent,
+        agent=Assistant(),
         room=ctx.room,
-        room_input_options=RoomInputOptions(noise_cancellation=noise_cancellation.BVC()),
+        room_input_options=RoomInputOptions(
+            noise_cancellation=noise_cancellation.BVC(),
+        ),
     )
 
+    # Join the room and connect to the user
     await ctx.connect()
 
 

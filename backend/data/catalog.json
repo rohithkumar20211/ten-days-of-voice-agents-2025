@@ -1,0 +1,82 @@
+[
+  {
+    "item_id": "G001",
+    "name": "Whole Wheat Bread",
+    "category": "Groceries",
+    "price_usd": 3.50,
+    "unit": "loaf",
+    "tags": ["vegan", "staple"]
+  },
+  {
+    "item_id": "G002",
+    "name": "Large Eggs",
+    "category": "Groceries",
+    "price_usd": 4.00,
+    "unit": "dozen",
+    "tags": ["staple"]
+  },
+  {
+    "item_id": "G003",
+    "name": "Milk",
+    "category": "Groceries",
+    "price_usd": 2.99,
+    "unit": "gallon",
+    "tags": ["staple"]
+  },
+  {
+    "item_id": "G004",
+    "name": "Spaghetti Pasta",
+    "category": "Groceries",
+    "price_usd": 1.99,
+    "unit": "16 oz box",
+    "tags": ["carb"]
+  },
+  {
+    "item_id": "G005",
+    "name": "Jarred Tomato Sauce",
+    "category": "Groceries",
+    "price_usd": 3.75,
+    "unit": "24 oz jar",
+    "tags": ["vegan", "sauce"]
+  },
+  {
+    "item_id": "S002",
+    "name": "Peanut Butter",
+    "category": "Snacks",
+    "price_usd": 4.99,
+    "unit": "16 oz jar",
+    "tags": ["vegan", "staple"]
+  },
+  {
+    "item_id": "P002",
+    "name": "Turkey and Swiss Sandwich",
+    "category": "Prepared Food",
+    "price_usd": 8.50,
+    "unit": "single",
+    "tags": ["lunch"]
+  },
+  {
+    "item_id": "G007",
+    "name": "Cheddar Cheese",
+    "category": "Groceries",
+    "price_usd": 5.50,
+    "unit": "8 oz block",
+    "tags": ["vegetarian", "dairy"]
+  },
+  {
+    "item_id": "G008",
+    "name": "Ground Beef ",
+    "category": "Groceries",
+    "price_usd": 7.99,
+    "unit": "lb",
+    "tags": ["meat"]
+  },
+  {
+    "item_id": "S005",
+    "name": "Tortilla Chips (Large)",
+    "category": "Snacks",
+    "price_usd": 3.25,
+    "unit": "bag",
+    "tags": ["staple"]
+  }
+]

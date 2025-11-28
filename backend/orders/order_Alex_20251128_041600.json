@@ -1,0 +1,30 @@
+{
+  "order_id": "QM-20251128-B25B29",
+  "timestamp": "2025-11-28T04:16:00.833746",
+  "customer_info": {
+    "name": "Alex",
+    "address": "One zero one Voice Lane"
+  },
+  "items": [
+    {
+      "item_id": "G003",
+      "name": "Milk",
+      "price_usd": 2.99,
+      "unit": "gallon",
+      "quantity": 3,
+      "line_total_usd": 8.97
+    },
+    {
+      "item_id": "P002",
+      "name": "Turkey and Swiss Sandwich",
+      "price_usd": 8.5,
+      "unit": "single",
+      "quantity": 1,
+      "line_total_usd": 8.5
+    }
+  ],
+  "subtotal_usd": 17.47,
+  "tax_usd": 1.4,
+  "order_total_usd": 18.87,
+  "status": "received"
+}
