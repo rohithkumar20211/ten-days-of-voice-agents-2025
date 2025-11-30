@@ -1,82 +1,82 @@
 [
   {
+    "item_id": "E001",
+    "name": "Noise-Cancelling Headphones",
+    "category": "Electronics",
+    "price_usd": 199.99,
+    "brand": "AudioTech",
+    "tags": ["premium", "wireless"]
+  },
+  {
+    "item_id": "E002",
+    "name": "Smart Watch (Model X)",
+    "category": "Electronics",
+    "price_usd": 249.00,
+    "brand": "Z-Wear",
+    "tags": ["fitness", "waterproof"]
+  },
+  {
+    "item_id": "A001",
+    "name": "Cotton T-Shirt (Blue, Large)",
+    "category": "Apparel",
+    "price_usd": 25.00,
+    "brand": "StyleCo",
+    "tags": ["mens", "casual"]
+  },
+  {
+    "item_id": "A002",
+    "name": "Running Shoes (Size 9)",
+    "category": "Apparel",
+    "price_usd": 75.50,
+    "brand": "Stride",
+    "tags": ["footwear", "sports"]
+  },
+  {
+    "item_id": "H001",
+    "name": "Coffee Maker (12-Cup)",
+    "category": "Home Goods",
+    "price_usd": 45.99,
+    "brand": "BrewMaster",
+    "tags": ["kitchen", "appliance"]
+  },
+  {
+    "item_id": "H002",
+    "name": "Scented Candle Set",
+    "category": "Home Goods",
+    "price_usd": 18.00,
+    "brand": "Aroma",
+    "tags": ["decor", "gift"]
+  },
+  {
     "item_id": "G001",
     "name": "Whole Wheat Bread",
     "category": "Groceries",
     "price_usd": 3.50,
-    "unit": "loaf",
-    "tags": ["vegan", "staple"]
+    "brand": "Local Bake",
+    "tags": ["staple"]
   },
   {
     "item_id": "G002",
-    "name": "Large Eggs",
+    "name": "Organic Coffee Beans (1lb)",
     "category": "Groceries",
-    "price_usd": 4.00,
-    "unit": "dozen",
-    "tags": ["staple"]
+    "price_usd": 15.99,
+    "brand": "BeanCo",
+    "tags": ["beverage"]
   },
   {
-    "item_id": "G003",
-    "name": "Milk",
-    "category": "Groceries",
-    "price_usd": 2.99,
-    "unit": "gallon",
-    "tags": ["staple"]
+    "item_id": "B001",
+    "name": "The Great Novel (Hardcover)",
+    "category": "Books",
+    "price_usd": 19.95,
+    "brand": "Publisher X",
+    "tags": ["fiction", "new"]
   },
   {
-    "item_id": "G004",
-    "name": "Spaghetti Pasta",
-    "category": "Groceries",
-    "price_usd": 1.99,
-    "unit": "16 oz box",
-    "tags": ["carb"]
-  },
-  {
-    "item_id": "G005",
-    "name": "Jarred Tomato Sauce",
-    "category": "Groceries",
-    "price_usd": 3.75,
-    "unit": "24 oz jar",
-    "tags": ["vegan", "sauce"]
-  },
-  {
-    "item_id": "S002",
-    "name": "Peanut Butter",
-    "category": "Snacks",
-    "price_usd": 4.99,
-    "unit": "16 oz jar",
-    "tags": ["vegan", "staple"]
-  },
-  {
-    "item_id": "P002",
-    "name": "Turkey and Swiss Sandwich",
-    "category": "Prepared Food",
-    "price_usd": 8.50,
-    "unit": "single",
-    "tags": ["lunch"]
-  },
-  {
-    "item_id": "G007",
-    "name": "Cheddar Cheese",
-    "category": "Groceries",
-    "price_usd": 5.50,
-    "unit": "8 oz block",
-    "tags": ["vegetarian", "dairy"]
-  },
-  {
-    "item_id": "G008",
-    "name": "Ground Beef ",
-    "category": "Groceries",
-    "price_usd": 7.99,
-    "unit": "lb",
-    "tags": ["meat"]
-  },
-  {
-    "item_id": "S005",
-    "name": "Tortilla Chips (Large)",
-    "category": "Snacks",
-    "price_usd": 3.25,
-    "unit": "bag",
-    "tags": ["staple"]
+    "item_id": "B002",
+    "name": "Python Programming Guide",
+    "category": "Books",
+    "price_usd": 39.99,
+    "brand": "TechPress",
+    "tags": ["non-fiction", "education"]
   }
 ]

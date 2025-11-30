@@ -1,0 +1,39 @@
+{
+  "order_id": "ACP-QM-20251130-470558",
+  "timestamp": "2025-11-30T19:24:25.899333",
+  "customer_info": {
+    "name": "Rohit",
+    "address_note": "apartment zero one"
+  },
+  "items": [
+    {
+      "item_id": "E001",
+      "name": "Noise-Cancelling Headphones",
+      "price_usd": 199.99,
+      "currency": "USD",
+      "quantity": 1,
+      "line_total_usd": 199.99
+    },
+    {
+      "item_id": "B002",
+      "name": "Python Programming Guide",
+      "price_usd": 39.99,
+      "currency": "USD",
+      "quantity": 1,
+      "line_total_usd": 39.99
+    },
+    {
+      "item_id": "H002",
+      "name": "Scented Candle Set",
+      "price_usd": 18.0,
+      "currency": "USD",
+      "quantity": 2,
+      "line_total_usd": 36.0
+    }
+  ],
+  "subtotal_usd": 275.98,
+  "tax_usd": 22.08,
+  "order_total_usd": 298.06,
+  "currency": "USD",
+  "status": "order_placed"
+}

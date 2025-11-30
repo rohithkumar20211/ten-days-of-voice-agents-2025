@@ -1,0 +1,39 @@
+{
+  "order_id": "ACP-QM-20251130-11EBB3",
+  "timestamp": "2025-11-30T17:50:09.599684",
+  "customer_info": {
+    "name": "allies",
+    "address_note": "apartment one a"
+  },
+  "items": [
+    {
+      "item_id": "E001",
+      "name": "Noise-Cancelling Headphones",
+      "price_usd": 199.99,
+      "currency": "USD",
+      "quantity": 1,
+      "line_total_usd": 199.99
+    },
+    {
+      "item_id": "A001",
+      "name": "Cotton T-Shirt (Blue, Large)",
+      "price_usd": 25.0,
+      "currency": "USD",
+      "quantity": 2,
+      "line_total_usd": 50.0
+    },
+    {
+      "item_id": "A002",
+      "name": "Running Shoes (Size 9)",
+      "price_usd": 75.5,
+      "currency": "USD",
+      "quantity": 1,
+      "line_total_usd": 75.5
+    }
+  ],
+  "subtotal_usd": 325.49,
+  "tax_usd": 26.04,
+  "order_total_usd": 351.53,
+  "currency": "USD",
+  "status": "order_placed"
+}

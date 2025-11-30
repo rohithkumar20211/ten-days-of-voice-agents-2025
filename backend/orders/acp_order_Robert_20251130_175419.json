@@ -1,0 +1,39 @@
+{
+  "order_id": "ACP-QM-20251130-1916EE",
+  "timestamp": "2025-11-30T17:54:19.153909",
+  "customer_info": {
+    "name": "Robert",
+    "address_note": "New York"
+  },
+  "items": [
+    {
+      "item_id": "A002",
+      "name": "Running Shoes (Size 9)",
+      "price_usd": 75.5,
+      "currency": "USD",
+      "quantity": 1,
+      "line_total_usd": 75.5
+    },
+    {
+      "item_id": "H001",
+      "name": "Coffee Maker (12-Cup)",
+      "price_usd": 45.99,
+      "currency": "USD",
+      "quantity": 1,
+      "line_total_usd": 45.99
+    },
+    {
+      "item_id": "H002",
+      "name": "Scented Candle Set",
+      "price_usd": 18.0,
+      "currency": "USD",
+      "quantity": 3,
+      "line_total_usd": 54.0
+    }
+  ],
+  "subtotal_usd": 175.49,
+  "tax_usd": 14.04,
+  "order_total_usd": 189.53,
+  "currency": "USD",
+  "status": "order_placed"
+}
